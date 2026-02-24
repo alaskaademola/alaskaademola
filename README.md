@@ -1,0 +1,1 @@
+# ECO-Trade Sentinel: AI for ECOWAS
