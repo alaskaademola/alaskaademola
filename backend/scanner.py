@@ -14,53 +14,46 @@ def clean_to_float(value):
     except:
         return 0.0
 
-def run_final_red_flag_audit():
+def run_greedy_audit():
     try:
-        print("--- 🛡️ ECO-Trade Sentinel: Analyzing Anomalies ---")
+        print("--- 🛡️ ECO-Trade Sentinel: Greedy Forensic Audit ---")
         df = pd.read_csv(FILE_PATH, encoding='latin1', on_bad_lines='skip')
 
-        # 1. Column Mapping (Finding Value and Weight)
+        # 1. Identify and Clean Columns
         val_col = next((c for c in df.columns if 'Value' in c or 'primaryValue' in c), None)
         qty_col = next((c for c in df.columns if 'Weight' in c or 'qty' in c), None)
-
-        # 2. Deep Cleaning
         df[val_col] = df[val_col].apply(clean_to_float)
         df[qty_col] = df[qty_col].apply(clean_to_float)
         df = df[(df[val_col] > 0) & (df[qty_col] > 0)].copy()
         
-        # 3. Feature Engineering
+        # 2. AI Anomaly Detection
         df['unit_price'] = df[val_col] / df[qty_col]
-
-        # 4. AI Detection
         model = IsolationForest(contamination=0.1, random_state=42)
         df['is_anomaly'] = model.fit_predict(df[[val_col, 'unit_price']])
-        
-        # Capture the Red Flags
         red_flags_df = df[df['is_anomaly'] == -1].copy()
 
-        print(f"✅ ANALYSIS COMPLETE")
-        print(f"Total Transactions Scanned: {len(df)}")
-        print(f"⚠️ High-Risk Anomalies Found: {len(red_flags_df)}")
+        print(f"✅ CLEAN SUCCESSFUL! Scanned: {len(df)} transactions.")
+        print(f"⚠️ Red Flags Found: {len(red_flags_df)}")
 
-        # 5. PRINT THE 22 FLAGS (The part you want to see!)
-        if not red_flags_df.empty:
-            print("\n" + "="*80)
-            print(f"{'REPORTER':<20} | {'COMMODITY':<15} | {'VALUE ($)':<15} | {'UNIT PRICE'}")
-            print("-" * 80)
-            
-            # Sort by Unit Price so the "worst" ones are at the top
-            top_flags = red_flags_df.sort_values(by='unit_price', ascending=False)
-            
-            for index, row in top_flags.iterrows():
-                reporter = str(row.get('reporterDesc', 'Unknown'))[:18]
-                cmd = str(row.get('cmdCode', 'N/A'))[:13]
-                val = f"{row[val_col]:,.2f}"
-                u_price = f"{row['unit_price']:.4f}"
-                print(f"{reporter:<20} | {cmd:<15} | {val:<15} | {u_price}")
-            print("="*80)
+        # 3. GREEDY STEP: Sector-Risk Ranking
+        # This uses 'cmdCode' or 'cmdDesc' to see where the most flags are
+        cmd_col = 'cmdCode' if 'cmdCode' in df.columns else 'cmdDesc'
+        print("\n--- 📊 SECTOR RISK RANKING ---")
+        sector_risk = red_flags_df.groupby(cmd_col).agg({
+            'unit_price': 'mean',
+            'is_anomaly': 'count'
+        }).rename(columns={'is_anomaly': 'flag_count'}).sort_values(by='flag_count', ascending=False)
+        print(sector_risk)
+
+        # 4. GREEDY STEP: Detecting "Mirror Trades"
+        # Flags exact duplicates in Value and Weight
+        duplicates = df[df.duplicated(subset=[val_col, qty_col], keep=False)]
+        print(f"\n⚠️ Mirror Trade Alert: Found {len(duplicates)} transactions with identical Value/Weight.")
+        if not duplicates.empty:
+            print(duplicates[[val_col, qty_col, cmd_col]].head(10))
         
     except Exception as e:
         print(f"Technical Error: {e}")
 
 if __name__ == "__main__":
-    run_final_red_flag_audit()
+    run_greedy_audit()
