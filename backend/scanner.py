@@ -1,33 +1,37 @@
 import pandas as pd
 from sklearn.ensemble import IsolationForest
+import os
 
-# 1. This tells the computer where to find your trade file
-# Change "your_file_name.csv" to the actual name of the file you downloaded
-FILE_PATH = "data/your_file_name.csv" 
+# Finds your file in the data folder
+base_path = os.path.dirname(os.path.abspath(__file__))
+FILE_PATH = os.path.join(base_path, "..", "data", "ecowas_trade.csv")
 
-def find_corruption_risk():
+def run_ai_audit():
     try:
-        # Load the data
-        df = pd.read_csv(FILE_PATH)
+        # Load data with the fix for that 'utf-8' error
+        df = pd.read_csv(FILE_PATH, encoding='latin1', on_bad_lines='skip')
         
-        # We look at 'TradeValue' and 'Qty' to find weird patterns
-        # Note: Make sure these column names match your CSV headers!
-        data_to_check = df[['TradeValue', 'Qty']]
+        # Use the columns we found in your terminal: primaryValue and qty
+        # We fill '0' for any missing numbers so the AI doesn't crash
+        analysis_data = df[['primaryValue', 'qty']].fillna(0)
 
-        # The AI: Isolation Forest 'isolates' the weird trades
-        model = IsolationForest(contamination=0.05) 
-        df['risk_level'] = model.fit_predict(data_to_check)
+        # Initialize the AI (Looking for the 5% most 'weird' trades)
+        model = IsolationForest(contamination=0.05, random_state=42)
+        df['is_anomaly'] = model.fit_predict(analysis_data)
 
-        # -1 means the AI found a Red Flag (anomaly)
-        red_flags = df[df['risk_level'] == -1]
+        # -1 = Red Flag (Anomaly)
+        red_flags = df[df['is_anomaly'] == -1]
+
+        print(f"✅ Scan Complete!")
+        print(f"Total Trades Analyzed: {len(df)}")
+        print(f"⚠️ High-Risk Red Flags Detected: {len(red_flags)}")
         
-        print(f"--- ECOWAS RISK REPORT ---")
-        print(f"Total Transactions Scanned: {len(df)}")
-        print(f"High-Risk Red Flags Found: {len(red_flags)}")
-        print(red_flags.head()) # Shows the top 5 suspicious trades
-        
+        if not red_flags.empty:
+            print("\n--- Top Suspicious Transactions ---")
+            print(red_flags[['reporterDesc', 'partnerDesc', 'primaryValue', 'qty']].head())
+
     except Exception as e:
-        print(f"Error: {e}. Make sure the file name and columns are correct!")
+        print(f"Error: {e}")
 
 if __name__ == "__main__":
-    find_corruption_risk()
+    run_ai_audit()
